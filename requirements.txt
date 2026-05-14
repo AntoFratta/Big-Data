@@ -1,0 +1,12 @@
+# Nota: su Colab PyTorch è già installato con CUDA.
+# In locale con GPU Blackwell (RTX 50xx) usare:
+#   pip uninstall torch -y
+#   pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu128
+
+pandas
+numpy
+scikit-learn
+matplotlib
+seaborn
+tqdm
+torch
