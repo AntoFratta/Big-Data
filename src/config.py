@@ -3,30 +3,24 @@ from pathlib import Path
 import torch
 
 
-# ---------------------------------------------------------------------------
-# Percorsi
-# ---------------------------------------------------------------------------
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
-DATA_DIR  = ROOT_DIR / "data"
+DATA_DIR = ROOT_DIR / "data"
 TRAIN_DIR = DATA_DIR / "train"
-TEST_DIR  = DATA_DIR / "test"
+TEST_DIR = DATA_DIR / "test"
 
 TRAIN_FEATURES_PATH = TRAIN_DIR / "dataset_augment_zeros.csv"
-TRAIN_LABELS_PATH   = TRAIN_DIR / "y_dataset_augment.csv"
+TRAIN_LABELS_PATH = TRAIN_DIR / "y_dataset_augment.csv"
 
 TEST_FEATURES_PATH = TEST_DIR / "dataset_test_zeros.csv"
-TEST_LABELS_PATH   = TEST_DIR / "y_dataset_test.csv"
+TEST_LABELS_PATH = TEST_DIR / "y_dataset_test.csv"
 
-OUTPUT_DIR  = ROOT_DIR / "outputs"
-MODELS_DIR  = OUTPUT_DIR / "models"
+OUTPUT_DIR = ROOT_DIR / "outputs"
+MODELS_DIR = OUTPUT_DIR / "models"
 RESULTS_DIR = OUTPUT_DIR / "results"
-PLOTS_DIR   = OUTPUT_DIR / "plots"
+PLOTS_DIR = OUTPUT_DIR / "plots"
 
-# ---------------------------------------------------------------------------
-# Colonne
-# ---------------------------------------------------------------------------
-ID_COLUMN     = "object_id"
+ID_COLUMN = "object_id"
 TARGET_COLUMN = "class"
 
 FEATURE_COLUMNS = [
@@ -49,48 +43,35 @@ FEATURE_COLUMNS = [
     "percentile_diff_70_50", "percentile_diff_90_50",
 ]
 
-INPUT_DIM = len(FEATURE_COLUMNS)  # 41
+INPUT_DIM = len(FEATURE_COLUMNS)
 
-# ---------------------------------------------------------------------------
-# Classi
-# ---------------------------------------------------------------------------
-# Classi note su cui si addestrano gli autoencoder
+# Classes used to train the autoencoders.
 KNOWN_CLASSES = [6, 15, 16, 42, 52, 53, 62, 64, 65, 67, 88, 90, 92, 95]
 
-# Classi novelty presenti solo nel test set (non viste in training)
+# Novelty classes are available only in the test set.
 NOVELTY_CLASSES = [991, 992, 993, 994]
 
-# ---------------------------------------------------------------------------
-# Iperparametri training
-# ---------------------------------------------------------------------------
-RANDOM_SEED   = 42
-BATCH_SIZE    = 256
-EPOCHS        = 50
+RANDOM_SEED = 42
+BATCH_SIZE = 256
+EPOCHS = 50
 LEARNING_RATE = 1e-3
-WEIGHT_DECAY  = 1e-4
+WEIGHT_DECAY = 1e-4
 
-# Soglia novelty: threshold_k = mu_k + SIGMA_FACTOR * sigma_k
+# Default novelty threshold: threshold_k = mu_k + SIGMA_FACTOR * sigma_k.
 SIGMA_FACTOR = 3
 
-# Device PyTorch
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ---------------------------------------------------------------------------
-# Esperimento 1 — unico autoencoder globale
-# Struttura da determinare (qui usiamo una architettura simmetrica generica)
-# ---------------------------------------------------------------------------
+# Experiment 1: single global autoencoder.
 EXP1_CONFIG = {
     "layer_dims": [41, 15, 9, 15, 41],
     "activation": "leaky_relu",
     "use_dropout": False,
 }
 
-# ---------------------------------------------------------------------------
-# Esperimento 2 — un autoencoder per ogni classe nota
-# Iperparametri ottimizzati dalla tesi (Tabella cap. 4)
-# ---------------------------------------------------------------------------
+# Experiment 2: one autoencoder for each known class.
+# The architectures reproduce the optimized configurations reported in the thesis.
 EXP2_CONFIG = {
-    # class_id : { "mae": {...}, "mse": {...} }
     6: {
         "mae": {"layer_dims": [41, 30, 25, 10, 3, 10, 25, 30, 41], "activation": "relu",       "use_dropout": False},
         "mse": {"layer_dims": [41, 35, 25, 15, 3, 15, 25, 35, 41], "activation": "leaky_relu", "use_dropout": False},
@@ -149,9 +130,6 @@ EXP2_CONFIG = {
     },
 }
 
-# ---------------------------------------------------------------------------
-# Esperimento 3 — custom loss; stessa architettura dell'Esperimento 2
-# EXP3_CONFIG è alias di EXP2_CONFIG: gli AE hanno la stessa struttura ma
-# vengono addestrati su TUTTO il training set con la custom loss.
-# ---------------------------------------------------------------------------
+# Experiment 3 uses the same architectures as Experiment 2, trained with the
+# custom loss on the full known-class training set.
 EXP3_CONFIG = EXP2_CONFIG
