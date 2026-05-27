@@ -269,7 +269,12 @@ def predict_novelty(
 # ---------------------------------------------------------------------------
 # ESPERIMENTO 1 — singolo AE globale
 # ---------------------------------------------------------------------------
-def run_experiment_1(data: dict, loss_fn: str = "mae") -> dict:
+def run_experiment_1(
+    data: dict,
+    loss_fn: str = "mae",
+    save_results: bool = True,
+    evaluate: bool = True,
+) -> dict:
     print(f"\n{'='*60}")
     print(f"ESPERIMENTO 1 — AE globale  |  Loss: {loss_fn.upper()}")
     print(f"{'='*60}")
@@ -299,14 +304,18 @@ def run_experiment_1(data: dict, loss_fn: str = "mae") -> dict:
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), MODELS_DIR / f"exp1_{loss_fn}.pt")
 
+    if not evaluate:
+        return {
+            "experiment": 1,
+            "loss_fn": loss_fn,
+            "threshold": threshold,
+            "history": history,
+        }
+
     # Errori di ricostruzione sul train (serve per il plot KDE)
     recon_fn = mae_reconstruction if loss_fn == "mae" else mse_reconstruction
-    X_known_t = torch.tensor(X_known, dtype=torch.float32).to(DEVICE)
-    X_test_t  = torch.tensor(X_test,  dtype=torch.float32).to(DEVICE)
-    model.eval()
-    with torch.no_grad():
-        train_errors = recon_fn(X_known_t, model(X_known_t)).cpu().numpy()
-        errors       = recon_fn(X_test_t,  model(X_test_t)).cpu().numpy()
+    train_errors = _compute_reconstruction_errors_batched(model, X_known, recon_fn)
+    errors = _compute_reconstruction_errors_batched(model, X_test, recon_fn)
 
     predictions = np.where(errors > threshold, -1, 0)  # 0 = "known" genericamente
 
@@ -321,14 +330,20 @@ def run_experiment_1(data: dict, loss_fn: str = "mae") -> dict:
         "y_test": y_test.tolist(),
     }
 
-    _save_results(results, f"exp1_{loss_fn}")
+    if save_results:
+        _save_results(results, f"exp1_{loss_fn}")
     return results
 
 
 # ---------------------------------------------------------------------------
 # ESPERIMENTO 2 — un AE per classe, addestrato solo sui campioni di quella classe
 # ---------------------------------------------------------------------------
-def run_experiment_2(data: dict, loss_fn: str = "mae") -> dict:
+def run_experiment_2(
+    data: dict,
+    loss_fn: str = "mae",
+    save_results: bool = True,
+    evaluate: bool = True,
+) -> dict:
     print(f"\n{'='*60}")
     print(f"ESPERIMENTO 2 — AE per classe  |  Loss: {loss_fn.upper()}")
     print(f"{'='*60}")
@@ -369,6 +384,14 @@ def run_experiment_2(data: dict, loss_fn: str = "mae") -> dict:
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
         torch.save(model.state_dict(), MODELS_DIR / f"exp2_{loss_fn}_class{cls}.pt")
 
+    if not evaluate:
+        return {
+            "experiment": 2,
+            "loss_fn": loss_fn,
+            "thresholds": {str(k): v for k, v in thresholds.items()},
+            "histories": {str(k): v for k, v in histories.items()},
+        }, autoencoders
+
     # Predizione sul test set
     predictions, min_errors = predict_novelty(autoencoders, thresholds, X_test, loss_fn)
 
@@ -382,14 +405,20 @@ def run_experiment_2(data: dict, loss_fn: str = "mae") -> dict:
         "y_test": y_test.tolist(),
     }
 
-    _save_results(results, f"exp2_{loss_fn}")
+    if save_results:
+        _save_results(results, f"exp2_{loss_fn}")
     return results, autoencoders
 
 
 # ---------------------------------------------------------------------------
 # ESPERIMENTO 3 — un AE per classe, addestrato su TUTTO il train con custom loss
 # ---------------------------------------------------------------------------
-def run_experiment_3(data: dict, loss_fn: str = "mae") -> dict:
+def run_experiment_3(
+    data: dict,
+    loss_fn: str = "mae",
+    save_results: bool = True,
+    evaluate: bool = True,
+) -> dict:
     print(f"\n{'='*60}")
     print(f"ESPERIMENTO 3 — Custom Loss  |  Loss: {loss_fn.upper()}")
     print(f"{'='*60}")
@@ -435,6 +464,14 @@ def run_experiment_3(data: dict, loss_fn: str = "mae") -> dict:
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
         torch.save(model.state_dict(), MODELS_DIR / f"exp3_{loss_fn}_class{cls}.pt")
 
+    if not evaluate:
+        return {
+            "experiment": 3,
+            "loss_fn": loss_fn,
+            "thresholds": {str(k): v for k, v in thresholds.items()},
+            "histories": {str(k): v for k, v in histories.items()},
+        }, autoencoders
+
     # Predizione sul test set
     predictions, min_errors = predict_novelty(autoencoders, thresholds, X_test, loss_fn)
 
@@ -448,7 +485,8 @@ def run_experiment_3(data: dict, loss_fn: str = "mae") -> dict:
         "y_test": y_test.tolist(),
     }
 
-    _save_results(results, f"exp3_{loss_fn}")
+    if save_results:
+        _save_results(results, f"exp3_{loss_fn}")
     return results, autoencoders
 
 

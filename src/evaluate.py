@@ -144,19 +144,36 @@ def plot_error_heatmap(
     Un valore basso sulla diagonale indica specializzazione.
     Corrisponde alle figure 4.2–4.9 del PDF.
     """
+    def _compact_value(value: float) -> str:
+        value = float(value)
+        abs_value = abs(value)
+        if np.isnan(value):
+            return ""
+        if abs_value >= 10000:
+            return f"{value / 1000:.0f}k"
+        if abs_value >= 1000:
+            return f"{value / 1000:.1f}k"
+        if abs_value >= 100:
+            return f"{value:.0f}"
+        if abs_value >= 10:
+            return f"{value:.1f}"
+        return f"{value:.2f}"
+
     df = pd.DataFrame(
         matrix,
         index=[f"C{c}" for c in row_labels],
         columns=[f"AE{c}" for c in col_labels],
     )
+    labels = df.map(_compact_value)
 
     h = max(6, len(row_labels) * 0.55)
-    w = max(10, len(col_labels) * 0.8)
+    w = max(12, len(col_labels) * 0.9)
 
     fig, ax = plt.subplots(figsize=(w, h))
     sns.heatmap(
-        df, ax=ax, annot=True, fmt=".3f", cmap="YlOrRd",
+        df, ax=ax, annot=labels, fmt="", cmap="YlOrRd",
         linewidths=0.4, cbar_kws={"label": "Errore medio"},
+        annot_kws={"fontsize": 8},
     )
     ax.set_title(title)
     ax.set_xlabel("Autoencoder")

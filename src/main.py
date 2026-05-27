@@ -17,6 +17,7 @@ import torch
 from config import KNOWN_CLASSES, PLOTS_DIR, RANDOM_SEED, RESULTS_DIR
 from data_loader import prepare_data
 from train import run_experiment_1, run_experiment_2, run_experiment_3
+import threshold_sensitivity
 from evaluate import (
     build_error_matrix,
     plot_error_distribution_exp1,
@@ -63,6 +64,22 @@ def _save_summary(name: str, payload: dict) -> None:
     with open(path, "w") as f:
         json.dump(payload, f, indent=2)
     print(f"  Summary salvato in: {path}")
+
+
+def _training_metadata_from_result(res: dict) -> dict:
+    if "history" in res:
+        return {
+            "history": res["history"],
+            "final_loss": float(res["history"][-1]),
+        }
+
+    if "histories" in res:
+        return {
+            "histories": res["histories"],
+            **_final_loss_stats(res["histories"]),
+        }
+
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -266,15 +283,43 @@ def main() -> None:
     data = prepare_data()
     print(f"  Train: {data['X_train'].shape}  |  Test: {data['X_test'].shape}")
 
+    training_metadata = {}
+
     for loss_fn in ("mae", "mse"):
-        pipeline_exp1(data, loss_fn)
-        pipeline_exp2(data, loss_fn)
-        pipeline_exp3(data, loss_fn)
+        res1 = run_experiment_1(
+            data,
+            loss_fn=loss_fn,
+            save_results=False,
+            evaluate=False,
+        )
+        training_metadata[f"exp1_{loss_fn}"] = _training_metadata_from_result(res1)
+
+        res2, _ = run_experiment_2(
+            data,
+            loss_fn=loss_fn,
+            save_results=False,
+            evaluate=False,
+        )
+        training_metadata[f"exp2_{loss_fn}"] = _training_metadata_from_result(res2)
+
+        res3, _ = run_experiment_3(
+            data,
+            loss_fn=loss_fn,
+            save_results=False,
+            evaluate=False,
+        )
+        training_metadata[f"exp3_{loss_fn}"] = _training_metadata_from_result(res3)
+
+    print("\nTraining completato.")
+    print("Avvio valutazione con soglie media + 3σ, + 2σ, + 1σ...")
+
+    threshold_sensitivity.TRAINING_METADATA = training_metadata
+    threshold_sensitivity.main(data=data)
 
     print("\nPipeline completata.")
     print(f"  Modelli  → outputs/models/")
-    print(f"  Risultati → outputs/results/")
-    print(f"  Grafici  → outputs/plots/")
+    print(f"  Risultati → outputs/results/sigma_*/")
+    print(f"  Grafici  → outputs/plots/sigma_*/")
 
 
 if __name__ == "__main__":

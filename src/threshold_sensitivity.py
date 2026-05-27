@@ -47,6 +47,7 @@ BATCH_EVAL_SIZE = 8192
 
 # Save complete per-sample outputs as requested for the threshold comparison.
 SAVE_DETAILED_RESULTS = True
+TRAINING_METADATA = {}
 
 
 def set_random_seed(seed: int = RANDOM_SEED) -> None:
@@ -189,6 +190,10 @@ def _save_outputs(
 
 def _load_training_metadata(experiment: int, loss_fn: str) -> dict:
     """Load lightweight training metadata from the previous main.py run."""
+    key = f"exp{experiment}_{loss_fn}"
+    if key in TRAINING_METADATA:
+        return TRAINING_METADATA[key]
+
     path = RESULTS_DIR / f"exp{experiment}_{loss_fn}_summary.json"
     if not path.exists():
         return {}
@@ -385,7 +390,7 @@ def evaluate_class_experiment(data: dict, experiment: int, loss_fn: str) -> None
         )
 
 
-def main() -> None:
+def main(data: dict | None = None) -> None:
     set_random_seed()
 
     print("=" * 60)
@@ -394,8 +399,11 @@ def main() -> None:
     print(f"  Sigma factors: {SIGMA_FACTORS}")
     print("  Saved models are loaded from outputs/models/")
 
-    print("\nLoading data...")
-    data = prepare_data()
+    if data is None:
+        print("\nLoading data...")
+        data = prepare_data()
+    else:
+        print("\nUsing data already loaded by the training pipeline...")
     print(f"  Train: {data['X_train'].shape}  |  Test: {data['X_test'].shape}")
 
     for loss_fn in ("mae", "mse"):
