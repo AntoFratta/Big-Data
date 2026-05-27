@@ -188,6 +188,7 @@ def compute_threshold(
     X_class: np.ndarray,
     loss_fn: str = "mae",
     batch_size: int = 8192,
+    sigma_factor: float = SIGMA_FACTOR,
 ) -> float:
     """
     Calcola la soglia di novelty per un autoencoder dato.
@@ -196,6 +197,7 @@ def compute_threshold(
     ----------
     X_class : np.ndarray (N_k, D) — campioni del train della classe k (già scalati)
     loss_fn : 'mae' o 'mse'
+    sigma_factor : moltiplicatore della deviazione standard nella soglia
 
     Returns
     -------
@@ -209,7 +211,7 @@ def compute_threshold(
 
     mu    = errors.mean()
     sigma = errors.std()
-    return float(mu + SIGMA_FACTOR * sigma)
+    return float(mu + sigma_factor * sigma)
 
 
 # ---------------------------------------------------------------------------
