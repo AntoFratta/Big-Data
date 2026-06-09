@@ -3,7 +3,7 @@ Training utilities for the three PLAsTiCC novelty-detection experiments.
 
 Experiment 1 trains one global autoencoder on all known classes. Experiment 2
 trains one autoencoder per known class. Experiment 3 keeps the same per-class
-architectures and trains each model with the custom loss described in the thesis.
+architectures and trains each model with the custom objective.
 """
 
 import json
@@ -27,14 +27,17 @@ from config import (
     SIGMA_FACTOR,
     WEIGHT_DECAY,
 )
-from data_loader import prepare_data
 from losses import (
     custom_loss_mae,
     custom_loss_mse,
-    mae_reconstruction,
-    mse_reconstruction,
 )
 from model import Autoencoder
+from utils import (
+    apply_class_thresholds,
+    compute_best_reconstruction,
+    compute_reconstruction_errors,
+    get_reconstruction_function,
+)
 
 
 def _make_loader(X: np.ndarray, y: np.ndarray = None, shuffle: bool = True) -> DataLoader:
@@ -47,27 +50,6 @@ def _make_loader(X: np.ndarray, y: np.ndarray = None, shuffle: bool = True) -> D
     return DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=shuffle)
 
 
-def _compute_reconstruction_errors_batched(
-    model: Autoencoder,
-    X: np.ndarray,
-    recon_fn,
-    batch_size: int = 8192,
-) -> np.ndarray:
-    """Compute reconstruction errors without loading the full array on DEVICE."""
-    model.eval()
-    model.to(DEVICE)
-
-    all_errors = []
-    with torch.no_grad():
-        for start in range(0, len(X), batch_size):
-            X_batch = torch.tensor(X[start:start + batch_size], dtype=torch.float32).to(DEVICE)
-            x_hat = model(X_batch)
-            errors = recon_fn(X_batch, x_hat).cpu().numpy()
-            all_errors.append(errors)
-
-    return np.concatenate(all_errors)
-
-
 def train_autoencoder(
     model: Autoencoder,
     loader: DataLoader,
@@ -75,7 +57,7 @@ def train_autoencoder(
     epochs: int = EPOCHS,
 ) -> list:
     """Train an autoencoder with MAE or MSE reconstruction loss."""
-    recon_fn = mae_reconstruction if loss_fn == "mae" else mse_reconstruction
+    recon_fn = get_reconstruction_function(loss_fn)
 
     model.to(DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
@@ -165,11 +147,10 @@ def compute_threshold(
 
     threshold = mean(training_errors) + sigma_factor * std(training_errors)
     """
-    recon_fn = mae_reconstruction if loss_fn == "mae" else mse_reconstruction
-    errors = _compute_reconstruction_errors_batched(
+    errors = compute_reconstruction_errors(
         model,
         X_class,
-        recon_fn,
+        loss_fn=loss_fn,
         batch_size=batch_size,
     )
 
@@ -189,24 +170,14 @@ def predict_novelty(
     Each sample is assigned to the autoencoder with the lowest reconstruction
     error, unless that error exceeds the corresponding class threshold.
     """
-    recon_fn = mae_reconstruction if loss_fn == "mae" else mse_reconstruction
+    min_err, best_cls = compute_best_reconstruction(
+        autoencoders,
+        X_test,
+        loss_fn=loss_fn,
+        batch_size=batch_size,
+    )
 
-    min_err = np.full(len(X_test), np.inf, dtype=np.float32)
-    best_cls = np.zeros(len(X_test), dtype=np.int64)
-
-    for cls, model in autoencoders.items():
-        errors = _compute_reconstruction_errors_batched(
-            model,
-            X_test,
-            recon_fn,
-            batch_size=batch_size,
-        )
-        better_mask = errors < min_err
-        min_err[better_mask] = errors[better_mask]
-        best_cls[better_mask] = cls
-
-    selected_thresholds = np.array([thresholds[c] for c in best_cls])
-    predictions = np.where(min_err > selected_thresholds, -1, best_cls)
+    predictions = apply_class_thresholds(min_err, best_cls, thresholds)
 
     return predictions, min_err
 
@@ -251,9 +222,8 @@ def run_experiment_1(
             "history": history,
         }
 
-    recon_fn = mae_reconstruction if loss_fn == "mae" else mse_reconstruction
-    train_errors = _compute_reconstruction_errors_batched(model, X_known, recon_fn)
-    errors = _compute_reconstruction_errors_batched(model, X_test, recon_fn)
+    train_errors = compute_reconstruction_errors(model, X_known, loss_fn=loss_fn)
+    errors = compute_reconstruction_errors(model, X_test, loss_fn=loss_fn)
 
     predictions = np.where(errors > threshold, -1, 0)
 
@@ -419,17 +389,6 @@ def run_experiment_3(
 def _save_results(results: dict, name: str) -> None:
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     path = RESULTS_DIR / f"{name}_results.json"
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
     print(f"  Results saved to: {path}")
-
-
-if __name__ == "__main__":
-    print("Loading data...")
-    data = prepare_data()
-    print(f"  Train: {data['X_train'].shape}  |  Test: {data['X_test'].shape}")
-
-    for loss in ("mae", "mse"):
-        run_experiment_1(data, loss_fn=loss)
-        run_experiment_2(data, loss_fn=loss)
-        run_experiment_3(data, loss_fn=loss)

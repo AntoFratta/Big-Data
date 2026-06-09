@@ -2,8 +2,8 @@
 Loss functions used by the novelty-detection experiments.
 
 The reconstruction losses return per-sample errors. The custom losses implement
-the thesis objective for Experiment 3, where the target class is encouraged to
-reconstruct well and the other known classes are discouraged from doing so.
+the Experiment 3 objective, where the target class is encouraged to reconstruct
+well and the other known classes are discouraged from doing so.
 """
 
 import torch

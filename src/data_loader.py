@@ -64,8 +64,8 @@ def prepare_data() -> dict:
     y_test = test_df[TARGET_COLUMN].values.astype(int)
 
     scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
+    X_train_scaled = scaler.fit_transform(X_train).astype(np.float32, copy=False)
+    X_test_scaled = scaler.transform(X_test).astype(np.float32, copy=False)
 
     return {
         "X_train": X_train_scaled,

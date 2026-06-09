@@ -19,6 +19,7 @@ OUTPUT_DIR = ROOT_DIR / "outputs"
 MODELS_DIR = OUTPUT_DIR / "models"
 RESULTS_DIR = OUTPUT_DIR / "results"
 PLOTS_DIR = OUTPUT_DIR / "plots"
+TRAINING_METADATA_PATH = MODELS_DIR / "training_metadata.json"
 
 ID_COLUMN = "object_id"
 TARGET_COLUMN = "class"
@@ -70,7 +71,8 @@ EXP1_CONFIG = {
 }
 
 # Experiment 2: one autoencoder for each known class.
-# The architectures reproduce the optimized configurations reported in the thesis.
+# These predefined architectures are the optimized configurations adopted by
+# the reference experimental setup.
 EXP2_CONFIG = {
     6: {
         "mae": {"layer_dims": [41, 30, 25, 10, 3, 10, 25, 30, 41], "activation": "relu",       "use_dropout": False},

@@ -12,7 +12,6 @@ outputs/plots/sigma_*.
 
 import json
 from pathlib import Path
-import random
 
 import numpy as np
 import torch
@@ -25,8 +24,8 @@ from config import (
     KNOWN_CLASSES,
     MODELS_DIR,
     PLOTS_DIR,
-    RANDOM_SEED,
     RESULTS_DIR,
+    TRAINING_METADATA_PATH,
 )
 from data_loader import prepare_data
 from evaluate import (
@@ -37,9 +36,13 @@ from evaluate import (
     plot_min_error_distribution,
     print_novelty_summary,
 )
-from losses import mae_reconstruction, mse_reconstruction
 from model import Autoencoder
-from train import _compute_reconstruction_errors_batched
+from utils import (
+    apply_class_thresholds,
+    compute_best_reconstruction,
+    compute_reconstruction_errors,
+    set_random_seed,
+)
 
 
 SIGMA_FACTORS = (3, 2, 1)
@@ -50,23 +53,9 @@ SAVE_DETAILED_RESULTS = True
 TRAINING_METADATA = {}
 
 
-def set_random_seed(seed: int = RANDOM_SEED) -> None:
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
-
-
 def _known_train(data: dict) -> tuple[np.ndarray, np.ndarray]:
     mask = np.isin(data["y_train"], KNOWN_CLASSES)
     return data["X_train"][mask], data["y_train"][mask]
-
-
-def _recon_fn(loss_fn: str):
-    return mae_reconstruction if loss_fn == "mae" else mse_reconstruction
 
 
 def _load_model(config: dict, path: Path) -> Autoencoder:
@@ -115,52 +104,19 @@ def _threshold_stats_by_class(
     y_train: np.ndarray,
     loss_fn: str,
 ) -> dict:
-    recon_fn = _recon_fn(loss_fn)
     stats = {}
 
     for cls, model in autoencoders.items():
         X_cls = X_train[y_train == cls]
-        errors = _compute_reconstruction_errors_batched(
+        errors = compute_reconstruction_errors(
             model,
             X_cls,
-            recon_fn,
+            loss_fn=loss_fn,
             batch_size=BATCH_EVAL_SIZE,
         )
         stats[cls] = _threshold_stats_from_errors(errors)
 
     return stats
-
-
-def _best_errors_and_classes(
-    autoencoders: dict[int, Autoencoder],
-    X_test: np.ndarray,
-    loss_fn: str,
-) -> tuple[np.ndarray, np.ndarray]:
-    recon_fn = _recon_fn(loss_fn)
-    min_errors = np.full(len(X_test), np.inf, dtype=np.float32)
-    best_classes = np.zeros(len(X_test), dtype=np.int64)
-
-    for cls, model in autoencoders.items():
-        errors = _compute_reconstruction_errors_batched(
-            model,
-            X_test,
-            recon_fn,
-            batch_size=BATCH_EVAL_SIZE,
-        )
-        better_mask = errors < min_errors
-        min_errors[better_mask] = errors[better_mask]
-        best_classes[better_mask] = cls
-
-    return min_errors, best_classes
-
-
-def _predict_from_thresholds(
-    min_errors: np.ndarray,
-    best_classes: np.ndarray,
-    thresholds: dict,
-) -> np.ndarray:
-    selected_thresholds = np.array([thresholds[int(cls)] for cls in best_classes])
-    return np.where(min_errors > selected_thresholds, -1, best_classes)
 
 
 def _output_dirs(sigma_factor: float) -> tuple[Path, Path]:
@@ -174,7 +130,7 @@ def _output_dirs(sigma_factor: float) -> tuple[Path, Path]:
 
 def _save_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
     print(f"  Saved: {path}")
 
@@ -189,20 +145,24 @@ def _save_outputs(
 
 
 def _load_training_metadata(experiment: int, loss_fn: str) -> dict:
-    """Load lightweight training metadata from the previous main.py run."""
+    """Load training metadata produced by the full training pipeline."""
     key = f"exp{experiment}_{loss_fn}"
     if key in TRAINING_METADATA:
         return TRAINING_METADATA[key]
 
-    path = RESULTS_DIR / f"exp{experiment}_{loss_fn}_summary.json"
-    if not path.exists():
-        return {}
+    if TRAINING_METADATA_PATH.exists():
+        with open(TRAINING_METADATA_PATH, "r", encoding="utf-8") as file:
+            persisted_metadata = json.load(file)
+        if key in persisted_metadata:
+            return persisted_metadata[key]
 
-    with open(path, "r") as f:
-        summary = json.load(f)
+    candidate_paths = [
+        RESULTS_DIR / f"sigma_{int(sigma)}" / f"{key}_results.json"
+        for sigma in SIGMA_FACTORS
+    ]
+    candidate_paths.append(RESULTS_DIR / f"{key}_summary.json")
 
-    metadata = {}
-    for key in (
+    metadata_keys = (
         "history",
         "histories",
         "final_loss",
@@ -211,11 +171,21 @@ def _load_training_metadata(experiment: int, loss_fn: str) -> dict:
         "final_loss_std",
         "final_loss_min",
         "final_loss_max",
-    ):
-        if key in summary:
-            metadata[key] = summary[key]
+    )
+    for path in candidate_paths:
+        if not path.exists():
+            continue
+        with open(path, "r", encoding="utf-8") as file:
+            result = json.load(file)
+        metadata = {
+            metadata_key: result[metadata_key]
+            for metadata_key in metadata_keys
+            if metadata_key in result
+        }
+        if metadata:
+            return metadata
 
-    return metadata
+    return {}
 
 
 def _detailed_arrays(**arrays) -> dict:
@@ -236,19 +206,17 @@ def evaluate_exp1(data: dict, loss_fn: str) -> None:
 
     training_metadata = _load_training_metadata(1, loss_fn)
     model = _load_model(EXP1_CONFIG, path)
-    recon_fn = _recon_fn(loss_fn)
-
     X_known, _ = _known_train(data)
-    train_errors = _compute_reconstruction_errors_batched(
+    train_errors = compute_reconstruction_errors(
         model,
         X_known,
-        recon_fn,
+        loss_fn=loss_fn,
         batch_size=BATCH_EVAL_SIZE,
     )
-    test_errors = _compute_reconstruction_errors_batched(
+    test_errors = compute_reconstruction_errors(
         model,
         data["X_test"],
-        recon_fn,
+        loss_fn=loss_fn,
         batch_size=BATCH_EVAL_SIZE,
     )
 
@@ -277,7 +245,7 @@ def evaluate_exp1(data: dict, loss_fn: str) -> None:
             y_test=data["y_test"],
             threshold=threshold,
             loss_fn=loss_fn,
-            title_suffix=f" - Exp 1 - sigma {sigma_factor}",
+            title_suffix=f" - threshold: mean + {sigma_factor} std",
             save_path=plots_dir / f"exp1_{loss_fn}_distribution.png",
         )
 
@@ -311,10 +279,11 @@ def evaluate_class_experiment(data: dict, experiment: int, loss_fn: str) -> None
         y_known,
         loss_fn,
     )
-    min_errors, best_classes = _best_errors_and_classes(
+    min_errors, best_classes = compute_best_reconstruction(
         autoencoders,
         data["X_test"],
-        loss_fn,
+        loss_fn=loss_fn,
+        batch_size=BATCH_EVAL_SIZE,
     )
 
     train_matrix, train_rows, cols = build_error_matrix(
@@ -333,7 +302,11 @@ def evaluate_class_experiment(data: dict, experiment: int, loss_fn: str) -> None
     for sigma_factor in SIGMA_FACTORS:
         _, plots_dir = _output_dirs(sigma_factor)
         thresholds = _thresholds_from_stats(threshold_stats, sigma_factor)
-        predictions = _predict_from_thresholds(min_errors, best_classes, thresholds)
+        predictions = apply_class_thresholds(
+            min_errors,
+            best_classes,
+            thresholds,
+        )
 
         summary = compute_novelty_summary(
             predictions=predictions,
@@ -350,14 +323,20 @@ def evaluate_class_experiment(data: dict, experiment: int, loss_fn: str) -> None
             train_matrix,
             train_rows,
             cols,
-            title=f"Exp {experiment} - Train errors ({loss_fn.upper()}) - sigma {sigma_factor}",
+            title=(
+                f"Experiment {experiment} - Mean training reconstruction "
+                f"errors ({loss_fn.upper()})"
+            ),
             save_path=plots_dir / f"exp{experiment}_{loss_fn}_train_heatmap.png",
         )
         plot_error_heatmap(
             test_matrix,
             test_rows,
             cols,
-            title=f"Exp {experiment} - Test errors ({loss_fn.upper()}) - sigma {sigma_factor}",
+            title=(
+                f"Experiment {experiment} - Mean test reconstruction "
+                f"errors ({loss_fn.upper()})"
+            ),
             save_path=plots_dir / f"exp{experiment}_{loss_fn}_test_heatmap.png",
         )
         plot_min_error_distribution(
@@ -365,7 +344,10 @@ def evaluate_class_experiment(data: dict, experiment: int, loss_fn: str) -> None
             y_test=data["y_test"],
             thresholds=thresholds,
             loss_fn=loss_fn,
-            title_suffix=f" - Exp {experiment} - sigma {sigma_factor}",
+            title_suffix=(
+                f" - Experiment {experiment} - threshold: "
+                f"mean + {sigma_factor} std"
+            ),
             save_path=plots_dir / f"exp{experiment}_{loss_fn}_min_errors.png",
         )
 

@@ -5,25 +5,15 @@ The script trains all autoencoders for MAE and MSE, then evaluates the saved
 models with the configured threshold factors through threshold_sensitivity.py.
 """
 
-import random
+import json
 
 import numpy as np
-import torch
 
 import threshold_sensitivity
-from config import RANDOM_SEED
+from config import MODELS_DIR, TRAINING_METADATA_PATH
 from data_loader import prepare_data
 from train import run_experiment_1, run_experiment_2, run_experiment_3
-
-
-def set_random_seed(seed: int = RANDOM_SEED) -> None:
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
+from utils import set_random_seed
 
 
 def _final_loss_stats(histories: dict) -> dict:
@@ -52,6 +42,14 @@ def _training_metadata_from_result(result: dict) -> dict:
         }
 
     return {}
+
+
+def _save_training_metadata(metadata: dict) -> None:
+    """Persist training histories so evaluation-only runs remain complete."""
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    with open(TRAINING_METADATA_PATH, "w", encoding="utf-8") as file:
+        json.dump(metadata, file, indent=2)
+    print(f"  Training metadata -> {TRAINING_METADATA_PATH}")
 
 
 def main() -> None:
@@ -99,6 +97,7 @@ def main() -> None:
         )
 
     print("\nTraining completed.")
+    _save_training_metadata(training_metadata)
     print("Starting evaluation with mean + 3 sigma, + 2 sigma, and + 1 sigma thresholds...")
 
     threshold_sensitivity.TRAINING_METADATA = training_metadata

@@ -1,115 +1,140 @@
 # PLAsTiCC Novelty Detection
 
-This project reproduces the autoencoder-based novelty detection experiments described in the reference thesis on the PLAsTiCC dataset. The main extension is the introduction of a threshold-based decision rule using:
+This project implements an autoencoder-based pipeline for novelty detection in
+the PLAsTiCC astronomical transient dataset. Each object is represented by 41
+numerical features extracted from its light curve and metadata.
+
+The training set contains 14 known classes. The test set contains the same known
+classes and four unseen novelty classes: `991`, `992`, `993`, and `994`. Novelty
+classes are used only for evaluation.
+
+## Method
+
+The pipeline uses reconstruction errors to determine whether a test sample is
+compatible with the known training distribution. The novelty threshold is
+parametrized as:
 
 ```text
-threshold = mean(training reconstruction error) + k * std(training reconstruction error)
+threshold = mean(training reconstruction errors)
+            + k * std(training reconstruction errors)
 ```
 
-The implemented comparison evaluates `k = 3`, `k = 2`, and `k = 1`.
+Three operating points are evaluated: `k = 3`, `k = 2`, and `k = 1`. A larger
+value is more conservative, while a smaller value generally increases novelty
+recall at the cost of more false novelty predictions.
 
-## Project Context
+The project compares three experimental settings:
 
-The dataset, feature set, autoencoder architectures, and loss functions follow the original thesis setup. The difference introduced here is the final decision criterion used to identify novelty samples.
+- **Experiment 1:** one global autoencoder trained on all known classes.
+- **Experiment 2:** one autoencoder per known class, trained only on that class.
+- **Experiment 3:** one autoencoder per known class, trained on all known
+  classes with a custom loss that encourages class specialization.
 
-For Experiment 1, a single global autoencoder is trained on all known classes. A test sample is classified as novelty if its reconstruction error is above the global threshold.
+Each experiment is trained and evaluated with both MAE- and MSE-based
+reconstruction criteria.
 
-For Experiments 2 and 3, one autoencoder is associated with each known class. For each test sample, the reconstruction error is computed across all class-specific autoencoders. The sample is assigned to the class of the autoencoder with the lowest reconstruction error, unless that minimum error exceeds the threshold associated with that autoencoder; in that case, it is classified as novelty.
-
-## Experiments
-
-- **Experiment 1**: one global autoencoder trained on all known classes.
-- **Experiment 2**: one autoencoder per known class, trained only on samples from that class.
-- **Experiment 3**: one autoencoder per known class, trained on all known classes using the custom loss from the thesis.
-
-Each experiment is evaluated with both MAE and MSE reconstruction losses.
+In Experiment 1, the reconstruction error is compared with one global
+threshold. In Experiments 2 and 3, each sample is reconstructed by all 14
+autoencoders. The autoencoder with the lowest error determines the candidate
+known class. If that error exceeds the threshold associated with the selected
+autoencoder, the sample is classified as novelty; otherwise, it is assigned to
+the candidate class.
 
 ## Repository Structure
 
 ```text
 src/
-  config.py                 Configuration, paths, classes, architectures
-  data_loader.py            Dataset loading, merging, and standardization
-  model.py                  Autoencoder definition
-  losses.py                 Reconstruction and custom losses
-  train.py                  Training and threshold utilities
-  evaluate.py               Metrics and plots
-  main.py                   Full training + threshold comparison pipeline
-  threshold_sensitivity.py  Re-evaluation of saved models with k = 3, 2, 1
-  test_pipeline.py          Fast integration test
+  config.py                 Paths, classes, hyperparameters, and architectures
+  data_loader.py            CSV loading, feature-label alignment, and scaling
+  model.py                  Fully connected autoencoder definition
+  losses.py                 MAE, MSE, and custom reconstruction losses
+  utils.py                  Shared seed and reconstruction-inference utilities
+  train.py                  Training functions for the three experiments
+  evaluate.py               Metrics and visualization functions
+  main.py                   Full training and threshold-evaluation pipeline
+  threshold_sensitivity.py  Evaluation of saved models for k = 3, 2, and 1
+  test_pipeline.py          Fast integration and smoke test
 
-data/                       Local dataset files, ignored by git
-outputs/                    Generated models, results, and plots, ignored by git
+data/                       Local dataset files
+outputs/                    Generated models, complete results, and plots
 ```
 
-## Data Layout
+## Installation
 
-The expected local data structure is:
+From the project directory:
 
-```text
-data/
-  train/
-    dataset_augment_zeros.csv
-    y_dataset_augment.csv
-  test/
-    dataset_test_zeros.csv
-    y_dataset_test.csv
-```
-
-The CSV files are not versioned because of their size.
-
-## Usage
-
-Install the required packages:
-
-```bash
+```cmd
 pip install -r requirements.txt
 ```
 
-Run a fast integration test:
+## Usage
 
-```bash
-cd src
-python test_pipeline.py
+Run commands from the `src` directory:
+
+```cmd
+cd /d C:\path\to\Big-Data\src
 ```
 
-Run the full pipeline from scratch:
+### Complete Pipeline
 
-```bash
-cd src
+```cmd
 python main.py
 ```
 
-This trains all models and then evaluates the three threshold settings.
+`main.py` performs the complete workflow:
 
-If the models have already been trained, run only the threshold comparison:
+1. loads and standardizes the datasets;
+2. trains all Experiment 1, 2, and 3 models with MAE and MSE;
+3. saves the trained model weights and training histories;
+4. evaluates the saved models with `k = 3`, `k = 2`, and `k = 1`;
+5. saves complete JSON results and plots for every configuration.
 
-```bash
-cd src
+The threshold comparison is executed by the same functions exposed through
+`threshold_sensitivity.py`.
+
+### Threshold Evaluation Without Retraining
+
+```cmd
 python threshold_sensitivity.py
 ```
 
-This reloads the models from `outputs/models/` and regenerates the results and plots for `sigma_3`, `sigma_2`, and `sigma_1`.
+Use this script when the models have already been trained. It reloads the model
+weights from `outputs/models/`, recomputes reconstruction errors and thresholds,
+and regenerates the results for all three values of `k` without training the
+autoencoders again.
+
+Training histories are loaded from
+`outputs/models/training_metadata.json`, ensuring that regenerated JSON files
+remain complete. The script overwrites the corresponding files under the
+threshold-specific result and plot directories.
 
 ## Outputs
 
-Generated files are saved under:
-
 ```text
-outputs/models/             Trained PyTorch models
-outputs/results/sigma_*/    Full JSON results for each threshold setting
-outputs/plots/sigma_*/      Heatmaps and reconstruction-error distributions
+outputs/
+  models/
+    *.pt                    Trained PyTorch model weights
+    training_metadata.json Training histories and final-loss statistics
+  results/
+    sigma_1/                Complete JSON results for mean + 1 std
+    sigma_2/                Complete JSON results for mean + 2 std
+    sigma_3/                Complete JSON results for mean + 3 std
+  plots/
+    sigma_1/                Plots for mean + 1 std
+    sigma_2/                Plots for mean + 2 std
+    sigma_3/                Plots for mean + 3 std
 ```
 
-The JSON results include the threshold values, summary metrics, predictions, reconstruction errors, true labels, and training histories where available.
+Each complete JSON result contains the relevant thresholds, predictions,
+reconstruction errors, true labels, summary metrics, and training history.
+Class-specific experiments also include the best-reconstructing class for every
+test sample.
 
-The main metrics are:
+Generated visual outputs include:
 
-- novelty recall;
-- false novelty rate;
-- per-class novelty recall;
-- known-class accuracy for Experiments 2 and 3.
+- Experiment 1 reconstruction-error distributions;
+- Experiment 2 and 3 train/test reconstruction-error heatmaps;
+- minimum reconstruction-error distributions for Experiments 2 and 3.
 
-## Notes
-
-The threshold factor controls the trade-off between novelty detection and false positives. A larger factor, such as `k = 3`, is more conservative and usually produces fewer false novelty predictions, while smaller factors increase novelty recall at the cost of more known samples being flagged as novelty.
+The reported metrics are novelty recall, false novelty rate, per-class novelty
+recall, and known-class accuracy for Experiments 2 and 3.

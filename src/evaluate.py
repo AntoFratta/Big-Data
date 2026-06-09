@@ -9,35 +9,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import torch
 
-from config import DEVICE, KNOWN_CLASSES, NOVELTY_CLASSES
-from losses import mae_reconstruction, mse_reconstruction
+from config import KNOWN_CLASSES, NOVELTY_CLASSES
 from model import Autoencoder
+from utils import compute_reconstruction_errors
 
 
 sns.set_theme(style="whitegrid", context="notebook")
-
-
-def _compute_errors(
-    model: Autoencoder,
-    X: np.ndarray,
-    loss_fn: str = "mae",
-    batch_size: int = 4096,
-) -> np.ndarray:
-    """Compute per-sample reconstruction errors in batches."""
-    recon_fn = mae_reconstruction if loss_fn == "mae" else mse_reconstruction
-    model.eval()
-    model.to(DEVICE)
-
-    all_errors = []
-    for start in range(0, len(X), batch_size):
-        X_batch = torch.tensor(X[start:start + batch_size], dtype=torch.float32).to(DEVICE)
-        with torch.no_grad():
-            errors = recon_fn(X_batch, model(X_batch)).cpu().numpy()
-        all_errors.append(errors)
-
-    return np.concatenate(all_errors)
 
 
 def build_error_matrix(
@@ -58,7 +36,11 @@ def build_error_matrix(
     matrix = np.full((len(row_classes), len(ae_classes)), np.nan, dtype=np.float32)
 
     for j, ae_cls in enumerate(ae_classes):
-        errors = _compute_errors(autoencoders[ae_cls], X, loss_fn)
+        errors = compute_reconstruction_errors(
+            autoencoders[ae_cls],
+            X,
+            loss_fn=loss_fn,
+        )
         for i, real_cls in enumerate(row_classes):
             mask = y == real_cls
             if mask.sum() > 0:
@@ -98,7 +80,10 @@ def plot_error_distribution_exp1(
 
     ax.set_xlabel(f"Reconstruction error ({loss_fn.upper()})")
     ax.set_ylabel("Density")
-    ax.set_title(f"Exp 1 - Error distribution {loss_fn.upper()}{title_suffix}")
+    ax.set_title(
+        f"Experiment 1 - Reconstruction-error distribution "
+        f"({loss_fn.upper()}){title_suffix}"
+    )
     ax.legend()
     plt.tight_layout()
 
@@ -193,7 +178,10 @@ def plot_min_error_distribution(
 
     ax.set_xlabel(f"Minimum reconstruction error ({loss_fn.upper()})")
     ax.set_ylabel("Density")
-    ax.set_title(f"min_errors distribution - {loss_fn.upper()}{title_suffix}")
+    ax.set_title(
+        f"Minimum reconstruction-error distribution "
+        f"({loss_fn.upper()}){title_suffix}"
+    )
     ax.legend()
     plt.tight_layout()
 
