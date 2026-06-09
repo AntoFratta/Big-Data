@@ -1,8 +1,6 @@
 import numpy as np
 import pandas as pd
-import torch
 from sklearn.preprocessing import StandardScaler
-from torch.utils.data import Dataset
 
 from config import (
     FEATURE_COLUMNS,
@@ -13,33 +11,6 @@ from config import (
     TRAIN_FEATURES_PATH,
     TRAIN_LABELS_PATH,
 )
-
-
-class PlasticcDataset(Dataset):
-    """
-    PyTorch dataset wrapper for PLAsTiCC features and labels.
-
-    Labels preserve the original class identifiers instead of using an
-    additional label-encoding step.
-    """
-
-    def __init__(self, features: np.ndarray, labels=None):
-        self.features = torch.tensor(features, dtype=torch.float32)
-        self.labels = (
-            torch.tensor(np.array(labels), dtype=torch.long)
-            if labels is not None
-            else None
-        )
-
-    def __len__(self) -> int:
-        return len(self.features)
-
-    def __getitem__(self, idx):
-        if self.labels is not None:
-            return self.features[idx], self.labels[idx]
-        return self.features[idx]
-
-
 def load_csv_data(features_path, labels_path) -> pd.DataFrame:
     """Load feature and label CSV files and merge them by object identifier."""
     features_df = pd.read_csv(features_path)

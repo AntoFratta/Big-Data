@@ -53,7 +53,6 @@ src/
   evaluate.py               Metrics and visualization functions
   main.py                   Full training and threshold-evaluation pipeline
   threshold_sensitivity.py  Evaluation of saved models for k = 3, 2, and 1
-  test_pipeline.py          Fast integration and smoke test
 
 data/                       Local dataset files
 outputs/                    Generated models, complete results, and plots

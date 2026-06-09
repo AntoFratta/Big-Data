@@ -5,6 +5,9 @@ __pycache__/
 *.pyd
 .Python
 
+# Local integration test
+src/test_pipeline.py
+
 # Virtual environments
 venv/
 env/
