@@ -124,6 +124,11 @@ outputs/
     sigma_3/                Plots for mean + 3 std
 ```
 
+> **Note:** Generated outputs, including trained models, complete JSON results,
+> and plots, are excluded from version control because of their size. They can
+> be regenerated with `main.py` or, when saved models are available, with
+> `threshold_sensitivity.py`.
+
 Each complete JSON result contains the relevant thresholds, predictions,
 reconstruction errors, true labels, summary metrics, and training history.
 Class-specific experiments also include the best-reconstructing class for every
