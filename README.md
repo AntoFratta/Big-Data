@@ -66,6 +66,17 @@ From the project directory:
 pip install -r requirements.txt
 ```
 
+## External Data and Outputs
+
+The dataset and generated outputs are shared separately through Google Drive
+because of their size. Download the complete `data/` and `outputs/` folders
+and place them unchanged in the repository root, alongside `src/`.
+
+`main.py` requires `data/` and generates or overwrites `outputs/`.
+`threshold_sensitivity.py` requires both `data/` and the saved weights in
+`outputs/models/`; it reloads those weights and overwrites the corresponding
+results and plots.
+
 ## Usage
 
 Run commands from the `src` directory:
