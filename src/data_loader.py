@@ -11,6 +11,8 @@ from config import (
     TRAIN_FEATURES_PATH,
     TRAIN_LABELS_PATH,
 )
+
+
 def load_csv_data(features_path, labels_path) -> pd.DataFrame:
     """Load feature and label CSV files and merge them by object identifier."""
     features_df = pd.read_csv(features_path)
